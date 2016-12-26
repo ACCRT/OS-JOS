@@ -7,25 +7,19 @@
 #
 OBJDIR := obj
 
-ifdef LAB
-SETTINGLAB := true
-else
--include conf/lab.mk
+# Run 'make V=1' to turn on verbose commands, or 'make V=0' to turn them off.
+ifeq ($(V),1)
+override V =
 endif
+ifeq ($(V),0)
+override V = @
+endif
+
+-include conf/lab.mk
 
 -include conf/env.mk
 
-ifndef SOL
-SOL := 0
-endif
-ifndef LABADJUST
-LABADJUST := 0
-endif
-
-ifndef LABSETUP
-LABSETUP := ./
-endif
-
+LABSETUP ?= ./
 
 TOP = .
 
@@ -69,6 +63,10 @@ endif
 
 # try to generate a unique GDB port
 GDBPORT	:= $(shell expr `id -u` % 5000 + 25000)
+# QEMU's gdb stub command line changed in 0.11
+QEMUGDB = $(shell if $(QEMU) -nographic -help | grep -q '^-gdb'; \
+	then echo "-gdb tcp::$(GDBPORT)"; \
+	else echo "-s -p $(GDBPORT)"; fi)
 
 CC	:= $(GCCPREFIX)gcc -pipe
 AS	:= $(GCCPREFIX)as
@@ -87,7 +85,8 @@ PERL	:= perl
 # -fno-builtin is required to avoid refs to undefined functions in the kernel.
 # Only optimize to -O1 to discourage inlining, which complicates backtraces.
 CFLAGS := $(CFLAGS) $(DEFS) $(LABDEFS) -O1 -fno-builtin -I$(TOP) -MD 
-CFLAGS += -Wall -Wno-format -Wno-unused -Werror -gstabs -m32 -fno-omit-frame-pointer
+CFLAGS += -fno-omit-frame-pointer
+CFLAGS += -Wall -Wno-format -Wno-unused -Werror -gstabs -m32
 
 # Add -fno-stack-protector if the option exists.
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
@@ -114,7 +113,8 @@ all:
 
 # make it so that no intermediate .o files are ever deleted
 .PRECIOUS: %.o $(OBJDIR)/boot/%.o $(OBJDIR)/kern/%.o \
-	$(OBJDIR)/lib/%.o $(OBJDIR)/fs/%.o $(OBJDIR)/user/%.o
+	   $(OBJDIR)/lib/%.o $(OBJDIR)/fs/%.o $(OBJDIR)/net/%.o \
+	   $(OBJDIR)/user/%.o
 
 KERN_CFLAGS := $(CFLAGS) -DJOS_KERNEL -gstabs
 USER_CFLAGS := $(CFLAGS) -DJOS_USER -gstabs
@@ -128,7 +128,7 @@ include kern/Makefrag
 
 
 IMAGES = $(OBJDIR)/kern/kernel.img
-QEMUOPTS = -hda $(OBJDIR)/kern/kernel.img -serial mon:stdio
+QEMUOPTS = -hda $(OBJDIR)/kern/kernel.img -serial mon:stdio $(QEMUEXTRA)
 
 .gdbinit: .gdbinit.tmpl
 	sed "s/localhost:1234/localhost:$(GDBPORT)/" < $^ > $@
@@ -137,23 +137,35 @@ qemu: $(IMAGES)
 	$(QEMU) $(QEMUOPTS)
 
 qemu-nox: $(IMAGES)
-	echo "*** Use Ctrl-a x to exit"
+	@echo "***"
+	@echo "*** Use Ctrl-a x to exit qemu"
+	@echo "***"
 	$(QEMU) -nographic $(QEMUOPTS)
 
 qemu-gdb: $(IMAGES) .gdbinit
+	@echo "***"
 	@echo "*** Now run 'gdb'." 1>&2
-	$(QEMU) $(QEMUOPTS) -s -S -p $(GDBPORT)
+	@echo "***"
+	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
 
-qemu-gdb-nox: $(IMAGES) .gdbinit
+qemu-nox-gdb: $(IMAGES) .gdbinit
+	@echo "***"
 	@echo "*** Now run 'gdb'." 1>&2
-	$(QEMU) -nographic $(QEMUOPTS) -s -S -p $(GDBPORT)
+	@echo "***"
+	$(QEMU) -nographic $(QEMUOPTS) -S $(QEMUGDB)
 
-which-qemu:
+print-qemu:
 	@echo $(QEMU)
+
+print-gdbport:
+	@echo $(GDBPORT)
+
+print-qemugdb:
+	@echo $(QEMUGDB)
 
 # For deleting the build
 clean:
-	rm -rf $(OBJDIR)
+	rm -rf $(OBJDIR) .gdbinit jos.in
 
 realclean: clean
 	rm -rf lab$(LAB).tar.gz jos.out
@@ -162,32 +174,18 @@ distclean: realclean
 	rm -rf conf/gcc.mk
 
 grade: $(LABSETUP)grade-lab$(LAB).sh
-	$(V)$(MAKE) clean >/dev/null 2>/dev/null
+	@echo $(MAKE) clean
+	@$(MAKE) clean || \
+	  (echo "'make clean' failed.  HINT: Do you have another running instance of JOS?" && exit 1)
 	$(MAKE) all
 	sh $(LABSETUP)grade-lab$(LAB).sh
 
 handin: tarball
-	@echo
-	@echo "Please use the following command to upload your lab:"
-	@echo
-	@echo "ftp -u ftp://osdi13:osdi13ipads@ipads.se.sjtu.edu.cn/lab$(LAB)/<student id>.tar.gz lab$(LAB)-handin.tar.gz"
-	@echo
-	@echo "For example, if your student id is 123456, then replace <student id>.tar.gz to 123456.tar.gz"
+	@echo Please upload lab$(LAB)-handin.tar.gz to dmkaplony@public.sjtu.edu.cn. Thanks!
 
 tarball: realclean
 	tar cf - `find . -type f | grep -v '^\.*$$' | grep -v '/CVS/' | grep -v '/\.svn/' | grep -v '/\.git/' | grep -v 'lab[0-9].*\.tar\.gz'` | gzip > lab$(LAB)-handin.tar.gz
 
-# For test runs
-run-%:
-	$(V)rm -f $(OBJDIR)/kern/init.o $(IMAGES)
-	$(V)$(MAKE) "DEFS=-DTEST=_binary_obj_user_$*_start -DTESTSIZE=_binary_obj_user_$*_size" $(IMAGES)
-	echo "*** Use Ctrl-a x to exit"
-	$(QEMU) -nographic $(QEMUOPTS)
-
-xrun-%:
-	$(V)rm -f $(OBJDIR)/kern/init.o $(IMAGES)
-	$(V)$(MAKE) "DEFS=-DTEST=_binary_obj_user_$*_start -DTESTSIZE=_binary_obj_user_$*_size" $(IMAGES)
-	$(QEMU) $(QEMUOPTS)
 
 # This magic automatically generates makefile dependencies
 # for header files included from C source files we compile,
@@ -203,4 +201,4 @@ always:
 	@:
 
 .PHONY: all always \
-	handin tarball clean realclean clean-labsetup distclean grade labsetup
+	handin tarball clean realclean distclean grade

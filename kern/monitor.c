@@ -88,7 +88,8 @@ read_pretaddr() {
     return pretaddr;
 }
 
-void do_overflow(void)
+void
+do_overflow(void)
 {
     cprintf("Overflow success\n");
 }
@@ -97,7 +98,7 @@ void
 start_overflow(void)
 {
 	// You should use a techique similar to buffer overflow
-	// to invoke the  function and
+	// to invoke the do_overflow function and
 	// the procedure must return normally.
 
     // And you must use the "cprintf" function with %n specifier
@@ -114,36 +115,24 @@ start_overflow(void)
 	uint32_t* ebp_addr = (uint32_t*)read_ebp();
 	uint32_t* esp_addr = (uint32_t*)read_esp();
 	uint32_t ebp = *ebp_addr;
-	uint32_t number = ((uint32_t)ebp_addr-(uint32_t)str);
+	uint32_t number = ((uint32_t)ebp_addr-(uint32_t)esp_addr-12);
 	int i;
 	for(i=0;i<number;i++)
-		str[i] = 1;
+		str[i] = 0;
 	
-	//str[number+3] = (ebp & 0xff000000) >> 24;
-	//str[number+2] = (ebp & 0x00ff0000) >> 16;
-	//str[number+1] = (ebp & 0x0000ff00) >> 8;
-	//str[number] = ebp & 0x000000ff;
+	str[number-1] = (ebp & 0xff000000) >> 24;
+	str[number-2] = (ebp & 0x00ff0000) >> 16;
+	str[number-3] = (ebp & 0x0000ff00) >> 8;
+	str[number-4] = ebp & 0x000000ff;
 	
-	// way1
-	uint32_t do_over = (uint32_t)do_overflow+6;
-	str[(do_over & 0x000000ff)] = 0;
-	cprintf("%s%n",str,str+number+4);
-	str[(do_over & 0x000000ff)] = 1;
-	str[(do_over & 0x0000ff00) >> 8] = 0;
-	cprintf("%s%n",str,str+number+5);
-	str[(do_over & 0x0000ff00) >> 8] = 1;	
-	str[(do_over & 0x00ff0000) >> 16] = 0;
-	cprintf("%s%n",str,str+number+6);	
-	str[(do_over & 0x00ff0000) >> 16] = 1;
-	str[(do_over & 0xff000000) >> 24] = 0;
-	cprintf("%s%n",	str,str+number+7);
-	str[(do_over & 0xff000000) >> 24] = 1;	
+	str[number] = 1<<4|14;
+	str[number+1] = 9;
+	str[number+2] = 1<<4;
+	str[number+3] = 15<<4;
+	cprintf("%s%n",str);
+	//ebp_addr[1] = (uint32_t)(0xf010091e);
 	
-	// way2
-	//str[number+4] = (do_over & 0x000000ff);
-	//str[number+5] = (do_over & 0x0000ff00) >> 8;
-	//str[number+6] = (do_over & 0x00ff0000) >> 16;
-	//str[number+7] = (do_over & 0xff000000) >> 24;
+
 }
 
 void
