@@ -8,7 +8,7 @@
 #include <inc/stdarg.h>
 #include <inc/error.h>
 
-extern int number;
+int length = 0;
 
 /*
  * Space or zero padding and a field width are supported for the numeric
@@ -100,7 +100,7 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 	int base, lflag, width, precision, altflag;
 	char padc;
 	int sign = 0;
-	number = 0;
+	length = 0;
 
 	while (1) {
 		while ((ch = *(unsigned char *) fmt++) != '%') {
@@ -276,8 +276,8 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 				printfmt(putch, putdat, "%s", null_error);
 			else
 			{
-				*a = number;
-				if(number > 127 || number < 0) printfmt(putch, putdat, "%s", overflow_error);
+				*a = length;
+				if(length > 127 || length < 0) printfmt(putch, putdat, "%s", overflow_error);
 			}
             // Your code here
 			

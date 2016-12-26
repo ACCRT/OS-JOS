@@ -10,9 +10,11 @@
 #include <kern/console.h>
 #include <kern/monitor.h>
 #include <kern/kdebug.h>
+#include <kern/trap.h>
+// Used in lab3 to run c,si,x command when breakpoint
+#include <kern/env.h>
 
 #define CMDBUF_SIZE	80	// enough for one VGA text line
-
 
 struct Command {
 	const char *name;
@@ -24,7 +26,10 @@ struct Command {
 static struct Command commands[] = {
 	{ "help", "Display this list of commands", mon_help },
 	{ "kerninfo", "Display information about the kernel", mon_kerninfo },
-	{ "time","Display time the function need", mon_time}
+	{ "time","Display time the function need", mon_time },
+	{ "c", "Continue to run", mon_c},
+	{ "si", "Step one", mon_si},
+	{ "x", "", mon_x}
 };
 #define NCOMMANDS (sizeof(commands)/sizeof(commands[0]))
 
@@ -79,6 +84,53 @@ mon_time(int argc, char **argv, struct Trapframe *tf)
 	return 0;
 }
 
+int
+mon_c(int argc, char **argv, struct Trapframe *tf)
+{
+	if (tf == NULL) 
+	{
+		cprintf("No trapped environment\n");
+		return 1;
+	}
+	
+	// make trap frame's eflag be not traped
+	tf->tf_eflags = tf->tf_eflags & (~FL_TF);
+	env_run(curenv);
+	return 0;
+}
+
+int
+mon_si(int argc, char **argv, struct Trapframe *tf)
+{
+	if (tf == NULL) 
+	{
+		cprintf("No trapped environment\n");
+		return 1;
+	}
+	
+	// make trap frame's eflag be traped
+	// FL_TF Eflags register trap flag
+	tf->tf_eflags = tf->tf_eflags | FL_TF;
+
+	cprintf("tf_eip=0x%x\n", tf->tf_eip);
+	env_run(curenv);
+	return 0;
+}
+
+int
+mon_x(int argc, char **argv, struct Trapframe *tf)
+{
+	if (argc != 2) cprintf("please enter x addr");
+	
+	// read argv[1] as 16-base
+	uint32_t addr = strtol(argv[1], NULL, 16);
+	// get the value in address addr
+	uint32_t val = *(int *)addr;
+    
+	cprintf("%d\n", val);
+	return 0;
+}
+
 // Lab1 only
 // read the pointer to the retaddr on the stack
 static uint32_t
@@ -115,24 +167,36 @@ start_overflow(void)
 	uint32_t* ebp_addr = (uint32_t*)read_ebp();
 	uint32_t* esp_addr = (uint32_t*)read_esp();
 	uint32_t ebp = *ebp_addr;
-	uint32_t number = ((uint32_t)ebp_addr-(uint32_t)esp_addr-12);
+	uint32_t number = ((uint32_t)ebp_addr-(uint32_t)str);
 	int i;
 	for(i=0;i<number;i++)
-		str[i] = 0;
+		str[i] = 1;
 	
-	str[number-1] = (ebp & 0xff000000) >> 24;
-	str[number-2] = (ebp & 0x00ff0000) >> 16;
-	str[number-3] = (ebp & 0x0000ff00) >> 8;
-	str[number-4] = ebp & 0x000000ff;
+	//str[number+3] = (ebp & 0xff000000) >> 24;
+	//str[number+2] = (ebp & 0x00ff0000) >> 16;
+	//str[number+1] = (ebp & 0x0000ff00) >> 8;
+	//str[number] = ebp & 0x000000ff;
 	
-	str[number] = 1<<4|14;
-	str[number+1] = 9;
-	str[number+2] = 1<<4;
-	str[number+3] = 15<<4;
-	cprintf("%s%n",str);
-	//ebp_addr[1] = (uint32_t)(0xf010091e);
+	// way1
+	uint32_t do_over = (uint32_t)do_overflow+6;
+	str[(do_over & 0x000000ff)] = 0;
+	cprintf("%s%n",str,str+number+4);
+	str[(do_over & 0x000000ff)] = 1;
+	str[(do_over & 0x0000ff00) >> 8] = 0;
+	cprintf("%s%n",str,str+number+5);
+	str[(do_over & 0x0000ff00) >> 8] = 1;	
+	str[(do_over & 0x00ff0000) >> 16] = 0;
+	cprintf("%s%n",str,str+number+6);	
+	str[(do_over & 0x00ff0000) >> 16] = 1;
+	str[(do_over & 0xff000000) >> 24] = 0;
+	cprintf("%s%n",	str,str+number+7);
+	str[(do_over & 0xff000000) >> 24] = 1;
 	
-
+	// way2
+	//str[number+4] = (do_over & 0x000000ff);
+	//str[number+5] = (do_over & 0x0000ff00) >> 8;
+	//str[number+6] = (do_over & 0x00ff0000) >> 16;
+	//str[number+7] = (do_over & 0xff000000) >> 24;
 }
 
 void
@@ -229,6 +293,8 @@ monitor(struct Trapframe *tf)
 	cprintf("Welcome to the JOS kernel monitor!\n");
 	cprintf("Type 'help' for a list of commands.\n");
 
+	if (tf != NULL)
+		print_trapframe(tf);
 
 	while (1) {
 		buf = readline("K> ");

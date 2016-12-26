@@ -5,14 +5,14 @@
 #include <inc/stdio.h>
 #include <inc/stdarg.h>
 
-int number = 0;
+extern int length;
 
 static void
 putch(int ch, int *cnt)
 {
 	cputchar(ch);
     (*cnt)++;
-    number++;
+    length++;
 }
 
 int
