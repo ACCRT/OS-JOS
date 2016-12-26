@@ -4,7 +4,7 @@
 #include <inc/memlayout.h>
 #include <inc/trap.h>
 
-
+#include <kern/picirq.h>
 
 ###################################################################
 # exceptions/interrupts
@@ -95,6 +95,35 @@ TRAPHANDLER(entry17, T_ALIGN);
 TRAPHANDLER_NOEC(entry18, T_MCHK);
 TRAPHANDLER_NOEC(entry19, T_SIMDERR );
 
+TRAPHANDLER_NOEC(entry48, T_SYSCALL);
+
+// The IDT entries 32-47 correspond to the IRQs 0-15. 
+/*
+// Hardware IRQ numbers. We receive these as (IRQ_OFFSET+IRQ_WHATEVER)
+#define IRQ_TIMER        0
+#define IRQ_KBD          1
+#define IRQ_SERIAL       4
+#define IRQ_SPURIOUS     7
+#define IRQ_IDE         14
+#define IRQ_ERROR       19
+*/
+TRAPHANDLER_NOEC(irq0, IRQ_OFFSET+IRQ_TIMER);
+TRAPHANDLER_NOEC(irq1, IRQ_OFFSET+IRQ_KBD);
+TRAPHANDLER_NOEC(irq2, IRQ_OFFSET+2);
+TRAPHANDLER_NOEC(irq3, IRQ_OFFSET+3);
+TRAPHANDLER_NOEC(irq4, IRQ_OFFSET+IRQ_SERIAL);
+TRAPHANDLER_NOEC(irq5, IRQ_OFFSET+5);
+TRAPHANDLER_NOEC(irq6, IRQ_OFFSET+6);
+TRAPHANDLER_NOEC(irq7, IRQ_OFFSET+IRQ_SPURIOUS);
+TRAPHANDLER_NOEC(irq8, IRQ_OFFSET+8);
+TRAPHANDLER_NOEC(irq9, IRQ_OFFSET+9);
+TRAPHANDLER_NOEC(irq10, IRQ_OFFSET+10);
+TRAPHANDLER_NOEC(irq11, IRQ_OFFSET+11);
+TRAPHANDLER_NOEC(irq12, IRQ_OFFSET+12);
+TRAPHANDLER_NOEC(irq13, IRQ_OFFSET+13);
+TRAPHANDLER_NOEC(irq14, IRQ_OFFSET+IRQ_IDE);
+TRAPHANDLER_NOEC(irq15, IRQ_OFFSET+15);
+TRAPHANDLER_NOEC(irq19, IRQ_OFFSET+IRQ_ERROR);
 
 
 .globl sysenter_handler;
@@ -104,6 +133,7 @@ sysenter_handler:
 /*
  * Lab 3: Your code here for system call handling
  */
+ 	
 	pushl $GD_UD|3
 	pushl %ebp
 	pushfl
@@ -114,17 +144,26 @@ sysenter_handler:
 	pushl %ds
 	pushl %es
 	pushal
+	
+	// kernel segment 
 	movw $GD_KD, %ax
 	movw %ax, %ds
 	movw %ax, %es
+	
+	// syscall function, push trapframe as a pointer 
 	pushl %esp
 	call my_syscall
+	
+	// set trapframe back to register
 	popl %esp
 	popal
 	popl %es
 	popl %ds
 	movl %ebp, %ecx
 	movl %esi, %edx
+	//sysenter will automatically disable interrupt, but sysexit won't recover it
+	sti
+	
 	sysexit
 
 /*
